@@ -42,19 +42,19 @@ with col2:
 if folders:
     st.subheader("子文件夹")
     for fd in folders:
-    nc, st_site = parse_name(fd.name)
-    c1, c2 = len(list(fd.glob("*.cif"))), len(list(fd.glob("*.xlsx")))
-    col1, col2, col3 = st.columns([3, 1, 1])
-    with col1:
-        if st.button(f"📁 {fd.name}", key=f"btn_{fd.name}"):
-            st.session_state.curr = curr / fd.name
-            st.rerun()
-    with col2:
-        st.caption("吸附位点")
-        st.text(st_site)
-    with col3:
-        st.caption("N 配位")
-        st.text(str(nc))
+        nc, st_site = parse_name(fd.name)
+        c1, c2 = len(list(fd.glob("*.cif"))), len(list(fd.glob("*.xlsx")))
+        col1, col2, col3 = st.columns([3, 1, 1])
+        with col1:
+            if st.button(f"📁 {fd.name}", key=f"btn_{fd.name}"):
+                st.session_state.curr = curr / fd.name
+                st.rerun()
+        with col2:
+            st.caption("吸附位点")
+            st.text(st_site)
+        with col3:
+            st.caption("N 配位")
+            st.text(str(nc))
 else:
     st.info("当前目录下无子文件夹")
 
@@ -82,4 +82,3 @@ if cifs or xlsx:
         st.download_button("📦 打包下载", zip_io, file_name=f"{curr.name or 'root'}.zip")
 else:
     st.info("当前目录下无 cif/xlsx 文件")
-
