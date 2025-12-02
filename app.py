@@ -2,8 +2,6 @@ import streamlit as st
 import pandas as pd
 from pathlib import Path
 import zipfile, io, re
-import py3Dmol
-import streamlit.components.v1 as components
 
 st.set_page_config(page_title="CatADB", layout="wide")
 st.title("🔬 催化剂-吸附质数据门户（逐级浏览 + CIF 可视化）")
@@ -17,16 +15,26 @@ def parse_name(fname: str):
             return n_coord, key.rstrip("i")
     return n_coord, "unknown"
 
-# ---------- 2. CIF 可视化 ----------
+# ---------- 2. CIF 可视化（绕过 IPython） ----------
 def view_cif(cif_path):
     with open(cif_path, "r", encoding="utf-8") as f:
         cif_txt = f.read()
-    viewer = py3Dmol.view(width=400, height=300)
-    viewer.addModel(cif_txt, "cif")
-    viewer.setStyle({"stick": {"radius": 0.15}, "sphere": {"scale": 0.25}})
-    viewer.zoomTo()
-    viewer.render()
-    return viewer
+    # 手动拼 HTML，绕过 py3Dmol 的 IPython 检查
+    html = f"""
+    <div id="view-{hash(cif_path)}" style="height: 300px;"></div>
+    <script src="https://3dmol.org/build/3Dmol-min.js"></script>
+    <script>
+        var viewer = $3Dmol.createViewer('view-{hash(cif_path)}');
+        viewer.addModel(`{cif_txt}`, 'cif');
+        viewer.setStyle({{stick: {{radius: 0.15}}, sphere: {{scale: 0.25}}}});
+        viewer.zoomTo();
+        viewer.render();
+    </script>
+    """
+    return html
+
+import streamlit.components.v1 as components
+import py3Dmol   # 仅用于版本依赖，实际不用 py3Dmol 对象
 
 # ---------- 3. 当前目录导航 ----------
 root = Path(__file__).parent
@@ -51,7 +59,7 @@ with col2:
             st.session_state.curr = curr.parent
             st.rerun()
 
-# ---------- 6. 自动分类卡片（当前层） ----------
+# ---------- 6. 自动分类卡片 ----------
 if folders:
     st.header("📊 当前层自动分类")
     df_fold = pd.DataFrame([parse_name(fd.name) + (fd.name,) for fd in folders],
@@ -78,8 +86,7 @@ if cifs:
     for f in cifs:
         col1, col2 = st.columns([1, 1])
         with col1:
-            viewer = view_cif(f)
-            components.html(viewer._repr_html_(), height=320)
+            components.html(view_cif(f), height=320)
         with col2:
             st.text(f"{f.name}")
             with open(f, "rb") as fp:
