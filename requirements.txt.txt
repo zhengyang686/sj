@@ -1,6 +1,8 @@
 streamlit>=1.33
 pandas==2.2.2
 numpy
-openpyxl==3.1.2
+pyarrow
 py3Dmol
 matplotlib
+
+
