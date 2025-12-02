@@ -3,13 +3,14 @@ import pandas as pd
 from pathlib import Path
 import zipfile, io, re
 import py3Dmol
+import streamlit.components.v1 as components
 
 st.set_page_config(page_title="CatADB", layout="wide")
 st.title("🔬 催化剂-吸附质数据门户（逐级浏览 + CIF 可视化）")
 
 # ---------- 1. 解析文件夹名 ----------
 def parse_name(fname: str):
-    n  = re.search(r"N(\d+)", fname, re.I)
+    n = re.search(r"N(\d+)", fname, re.I)
     n_coord = int(n.group(1)) if n else 0
     for key in ["Br", "Bri", "atop"]:
         if key.lower() in fname.lower():
@@ -20,7 +21,6 @@ def parse_name(fname: str):
 def view_cif(cif_path):
     with open(cif_path, "r", encoding="utf-8") as f:
         cif_txt = f.read()
-    # 创建 3Dmol 对象
     viewer = py3Dmol.view(width=400, height=300)
     viewer.addModel(cif_txt, "cif")
     viewer.setStyle({"stick": {"radius": 0.15}, "sphere": {"scale": 0.25}})
@@ -62,34 +62,24 @@ if folders:
         with col:
             st.metric(label=f"{row['site']} — N{row['N']}", value=row["count"])
 
-# ---------- 7. 子文件夹（按钮进入） ----------
+# ---------- 7. 子文件夹（仅按钮） ----------
 if folders:
     st.subheader("子文件夹")
     for fd in folders:
-        nc, st_site = parse_name(fd.name)
-        c1, c2 = len(list(fd.glob("*.cif"))), len(list(fd.glob("*.xlsx")))
-        col1, col2, col3 = st.columns([3, 1, 1])
-        with col1:
-            if st.button(f"📁 {fd.name}", key=f"btn_{fd.name}"):
-                st.session_state.curr = curr / fd.name
-                st.rerun()
-        with col2:
-            st.caption("吸附位点")
-            st.text(st_site)
-        with col3:
-            st.caption("N 配位")
-            st.text(str(nc))
+        if st.button(f"📁 {fd.name}", key=f"btn_{fd.name}"):
+            st.session_state.curr = curr / fd.name
+            st.rerun()
 else:
     st.info("当前目录下无子文件夹")
 
-# ---------- 8. CIF 可视化 & 下载 ----------
+# ---------- 8. CIF 可视化 ----------
 if cifs:
     st.subheader("🔍 CIF 可视化")
     for f in cifs:
         col1, col2 = st.columns([1, 1])
         with col1:
             viewer = view_cif(f)
-            st.components.html(viewer._repr_html_(), height=320)
+            components.html(viewer._repr_html_(), height=320)
         with col2:
             st.text(f"{f.name}")
             with open(f, "rb") as fp:
