@@ -1,105 +1,76 @@
 import streamlit as st
 import pandas as pd
 from pathlib import Path
-import zipfile, io, re, subprocess
+import zipfile, io, re
 
 st.set_page_config(page_title="CatADB", layout="wide")
-st.title("🔬 催化剂-吸附质数据门户")
+st.title("🔬 催化剂-吸附质数据门户（文件夹浏览器）")
 
-# ----------- 1. 递归扫描仓库根下所有文件夹 -----------
-@st.cache_data(show_spinner=False)
-def load_all_folders():
-    # 用 commit id 当缓存键，任何 push 都会自动失效
-    commit = subprocess.check_output(["git", "rev-parse", "HEAD"], encoding="utf-8").strip()
-    root = Path(__file__).parent          # 仓库根
-    rows = []
-    # rglob 只拿“目录”
-    for fd in root.rglob("*"):
-        if not fd.is_dir():
-            continue
-        # 跳过隐藏目录和 .git
-        if any(part.startswith(".") for part in fd.parts):
-            continue
-        cifs  = list(fd.glob("*.cif"))
-        xlsx  = list(fd.glob("*.xlsx"))
-        # 正则提取吸附位点 & N 配位（按你命名习惯）
+# ---------- 1. 当前目录导航 ----------
+root = Path(__file__).parent
+if "curr" not in st.session_state:
+    st.session_state.curr = Path("")          # 相对根目录
+
+curr: Path = st.session_state.curr
+abs_curr = root / curr
+
+# ---------- 2. 扫描当前层 ----------
+folders = [p for p in abs_curr.iterdir() if p.is_dir()]
+cifs    = list(abs_curr.glob("*.cif"))
+xlsx    = list(abs_curr.glob("*.xlsx"))
+
+# ---------- 3. 顶部导航栏 ----------
+col1, col2 = st.columns([4, 1])
+with col1:
+    st.markdown(f"📂 **当前目录：** `{curr}`")
+with col2:
+    if curr != Path(""):
+        if st.button("← 返回上级"):
+            st.session_state.curr = curr.parent
+            st.rerun()
+
+# ---------- 4. 当前层文件夹列表 ----------
+if folders:
+    st.subheader("子文件夹")
+    for fd in folders:
         site = re.search(r"site_(\w+)", fd.name, re.I)
         nco  = re.search(r"N(\d+)",   fd.name, re.I)
-        rows.append({
-            "folder_name": fd.name,
-            "rel_path":    fd.relative_to(root),   # 用于展示
-            "abs_path":    fd,                     # 用于读文件
-            "ads_site":    site.group(1) if site else "unknown",
-            "n_coord":     int(nco.group(1)) if nco else 0,
-            "cifs":        cifs,
-            "xlsx":        xlsx,
-            "file_cnt":    len(cifs) + len(xlsx)
-        })
-    return pd.DataFrame(rows)
+        c1, c2 = len(list(fd.glob("*.cif"))), len(list(fd.glob("*.xlsx")))
+        col1, col2, col3 = st.columns([3, 1, 1])
+        with col1:
+            if st.button(f"📁 {fd.name}", key=f"btn_{fd.name}"):
+                st.session_state.curr = curr / fd.name
+                st.rerun()
+        with col2:
+            st.caption("吸附位点")
+            st.text(site.group(1) if site else "-")
+        with col3:
+            st.caption("N 配位")
+            st.text(nco.group(1) if nco else "-")
+else:
+    st.info("当前目录下无子文件夹")
 
-df_all = load_all_folders()
-
-if df_all.empty:
-    st.warning("仓库里没找到任何含 cif/xlsx 的文件夹！")
-    st.stop()
-
-# ----------- 2. 侧边栏过滤 -----------
-with st.sidebar:
-    kw = st.text_input("搜索文件夹关键字", "")
-    sites = ["全部"] + sorted(df_all["ads_site"].unique())
-    site_sel = st.selectbox("吸附位点", sites)
-    coords = ["全部"] + sorted(df_all["n_coord"].astype(str).unique())
-    coord_sel = st.selectbox("N 配位数量", coords)
-
-mask = df_all["folder_name"].str.contains(kw, case=False, na=False)
-if site_sel != "全部": mask &= df_all["ads_site"] == site_sel
-if coord_sel != "全部": mask &= df_all["n_coord"] == int(coord_sel)
-df_show = df_all[mask]
-
-st.info(f"共找到 {len(df_show)} 个文件夹")
-
-# ----------- 3. 展示文件夹列表 -----------
-disp_df = df_show.copy()
-disp_df["cifs"] = disp_df["cifs"].apply(lambda lst: ", ".join(p.name for p in lst))
-disp_df["xlsx"] = disp_df["xlsx"].apply(lambda lst: ", ".join(p.name for p in lst))
-
-sel = st.dataframe(
-    disp_df[["rel_path", "ads_site", "n_coord", "file_cnt"]],
-    use_container_width=True,
-    selection_mode="single-row",
-    on_select="rerun",
-    key="folder_tb"
-)
-
-if not sel["selection"]["rows"]:
-    st.stop()
-row = df_show.iloc[sel["selection"]["rows"][0]]
-fd_path = row["abs_path"]
-
-# ----------- 4. 右侧文件预览 / 下载 -----------
-st.subheader(f"📁 {row['rel_path']}")
-tab1, tab2, tab3 = st.tabs([f"cif ({len(row['cifs'])})",
-                            f"Excel ({len(row['xlsx'])})",
-                            "打包下载"])
-
-with tab1:
-    for cif in row["cifs"]:
-        with open(cif, "rb") as f:
-            st.download_button(f"📄 {cif.name}", f, file_name=cif.name)
-
-with tab2:
-    for xlsx in row["xlsx"]:
-        df_x = pd.read_excel(xlsx, engine="openpyxl")
-        st.markdown(f"**{xlsx.name}**")
-        st.dataframe(df_x, use_container_width=True)
-        with open(xlsx, "rb") as f:
-            st.download_button("下载此表", f, file_name=xlsx.name)
-
-with tab3:
-    zip_io = io.BytesIO()
-    with zipfile.ZipFile(zip_io, "w") as z:
-        for f in row["cifs"] + row["xlsx"]:
-            z.write(f, arcname=f.relative_to(fd_path))
-    zip_io.seek(0)
-    st.download_button("📦 打包整个文件夹", zip_io,
-                       file_name=f"{row['folder_name']}.zip")
+# ---------- 5. 当前层文件预览 / 下载 ----------
+if cifs or xlsx:
+    st.subheader("当前目录文件")
+    tab1, tab2, tab3 = st.tabs([f"cif ({len(cifs)})", f"Excel ({len(xlsx)})", "打包当前目录"])
+    with tab1:
+        for f in cifs:
+            with open(f, "rb") as fp:
+                st.download_button(f"📄 {f.name}", fp, file_name=f.name)
+    with tab2:
+        for f in xlsx:
+            df_tmp = pd.read_excel(f, engine="openpyxl")
+            st.markdown(f"**{f.name}**")
+            st.dataframe(df_tmp, use_container_width=True)
+            with open(f, "rb") as fp:
+                st.download_button("下载此表", fp, file_name=f.name)
+    with tab3:
+        zip_io = io.BytesIO()
+        with zipfile.ZipFile(zip_io, "w") as z:
+            for f in cifs + xlsx:
+                z.write(f, arcname=f.name)
+        zip_io.seek(0)
+        st.download_button("📦 打包下载", zip_io, file_name=f"{curr.name or 'root'}.zip")
+else:
+    st.info("当前目录下无 cif/xlsx 文件")
