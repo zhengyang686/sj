@@ -78,7 +78,7 @@ with tab1:
 
 with tab2:
     for xlsx in row["xlsx"]:
-        df_x = pd.read_excel(xlsx, engine="openpyxl")
+        df_x = pd.read_excel(xlsx)   # 不指定 engine
         st.markdown(f"**{xlsx.name}**")
         st.dataframe(df_x, use_container_width=True)
         with open(xlsx, "rb") as f:
@@ -91,4 +91,5 @@ with tab3:
             z.write(f, arcname=f.relative_to(fd_path))
     zip_io.seek(0)
     st.download_button("📦 打包整个文件夹", zip_io,
+
                        file_name=f"{row['folder']}.zip")
